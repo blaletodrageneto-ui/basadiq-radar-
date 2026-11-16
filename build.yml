@@ -1,0 +1,59 @@
+name: Build and publish installer
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare sketch folder
+        run: |
+          mkdir -p BasadiqRadar
+          cp BasadiqRadar.ino BasadiqRadar/BasadiqRadar.ino
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core 2.0.17
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.17
+
+      - name: Compile
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=huge_app --output-dir out BasadiqRadar
+          ls -la out
+
+      - name: Assemble site
+        run: |
+          mkdir -p site/firmware
+          cp out/BasadiqRadar.ino.bootloader.bin site/firmware/bootloader.bin
+          cp out/BasadiqRadar.ino.partitions.bin site/firmware/partitions.bin
+          cp out/BasadiqRadar.ino.bin site/firmware/app.bin
+          cp ~/.arduino15/packages/esp32/hardware/esp32/2.0.17/tools/partitions/boot_app0.bin site/firmware/boot_app0.bin
+          cp index.html manifest.json site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.d.outputs.page_url }}
+    steps:
+      - id: d
+        uses: actions/deploy-pages@v4
